@@ -10,118 +10,352 @@ void main() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Test',
+      home: HomePage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class HomePage extends StatefulWidget {
+  const HomePage({Key? key}) : super(key: key);
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _HomePageState extends State<HomePage> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _minPriceController = TextEditingController();
+  final TextEditingController _maxPriceController = TextEditingController();
+  final CollectionReference _products = FirebaseFirestore.instance.collection('products');
 
-  void _incrementCounter() {
+  String _searchQuery = '';
+  double? _minPrice;
+  double? _maxPrice;
+
+  String _filterFeedback = '';
+
+  // Create or update product
+  Future<void> _createOrUpdate([DocumentSnapshot? documentSnapshot]) async {
+    String action = 'create';
+    if (documentSnapshot != null) {
+      action = 'update';
+      _nameController.text = documentSnapshot['name'];
+      _priceController.text = documentSnapshot['price'].toString();
+    }
+
+    await showModalBottomSheet(
+      isScrollControlled: true,
+      context: context,
+      builder: (BuildContext ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            top: 20,
+            left: 20,
+            right: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              TextField(
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                controller: _priceController,
+                decoration: const InputDecoration(labelText: 'Price'),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                child: Text(action == 'create' ? 'Create' : 'Update'),
+                onPressed: () async {
+                  String name = _nameController.text;
+                  double price = double.parse(_priceController.text);
+                  if (name.isNotEmpty && price != null) {
+                    if (action == 'create') {
+                      await _products.add({"name": name, "price": price});
+                    }
+                    if (action == 'update') {
+                      await _products.doc(documentSnapshot!.id).update({
+                        "name": name,
+                        "price": price,
+                      });
+                    }
+                    _nameController.text = '';
+                    _priceController.text = '';
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Deleting a product by id
+  Future<void> _deleteProduct(String productId) async {
+    await _products.doc(productId).delete();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('You have successfully deleted a product')),
+    );
+  }
+
+  // Filter products by price range
+  void _filterProducts() {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _minPrice = _minPriceController.text.isNotEmpty
+          ? double.tryParse(_minPriceController.text)
+          : null;
+      _maxPrice = _maxPriceController.text.isNotEmpty
+          ? double.tryParse(_maxPriceController.text)
+          : null;
+      _filterFeedback = 'Filters applied: Min Price: ${_minPrice ?? 'Any'} - Max Price: ${_maxPrice ?? 'Any'}';
+    });
+  }
+
+  // Reset filters
+  void _resetFilter() {
+    setState(() {
+      _minPriceController.clear();
+      _maxPriceController.clear();
+      _minPrice = null;
+      _maxPrice = null;
+      _filterFeedback = 'Filters reset';
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+        title: const Text('ICA 12'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: () {
+                showSearch(
+                  context: context,
+                  delegate: ProductSearchDelegate(_products),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Search bar at the top
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                hintText: 'Search products...',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (query) {
+                setState(() {
+                  _searchQuery = query.toLowerCase();
+                });
+              },
+            ),
+          ),
+          // Filter section
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _minPriceController,
+                    decoration: const InputDecoration(
+                      labelText: 'Min Price',
+                      prefixIcon: Icon(Icons.attach_money),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: _maxPriceController,
+                    decoration: const InputDecoration(
+                      labelText: 'Max Price',
+                      prefixIcon: Icon(Icons.attach_money),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.filter_list),
+                  onPressed: _filterProducts,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _resetFilter,
+                ),
+              ],
+            ),
+          ),
+          // Display filter feedback
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Text(
+              _filterFeedback,
+              style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.blue),
+            ),
+          ),
+          // StreamBuilder to display filtered products
+          Expanded(
+            child: StreamBuilder(
+              stream: _products.snapshots(),
+              builder: (context, AsyncSnapshot<QuerySnapshot> streamSnapshot) {
+                if (streamSnapshot.hasData) {
+                  final filteredProducts = streamSnapshot.data!.docs.where((documentSnapshot) {
+                    final name = documentSnapshot['name'].toString().toLowerCase();
+                    final price = documentSnapshot['price'];
+
+                    // Check if the product matches search query and price range
+                    final matchesSearch = name.contains(_searchQuery);
+                    final matchesPriceRange =
+                        (_minPrice == null || price >= _minPrice!) &&
+                            (_maxPrice == null || price <= _maxPrice!);
+
+                    return matchesSearch && matchesPriceRange;
+                  }).toList();
+
+                  if (filteredProducts.isEmpty) {
+                    return const Center(
+                      child: Text('No products found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: filteredProducts.length,
+                    itemBuilder: (context, index) {
+                      final documentSnapshot = filteredProducts[index];
+                      return Card(
+                        margin: const EdgeInsets.all(10),
+                        child: ListTile(
+                          title: Text(documentSnapshot['name']),
+                          subtitle: Text(documentSnapshot['price'].toString()),
+                          trailing: SizedBox(
+                            width: 100,
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () => _createOrUpdate(documentSnapshot),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete),
+                                  onPressed: () => _deleteProduct(documentSnapshot.id),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }
+                return const Center(child: CircularProgressIndicator());
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
+        onPressed: () => _createOrUpdate(),
         child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      ),
     );
+  }
+}
+
+// Search delegate for filtering the product list based on search query
+class ProductSearchDelegate extends SearchDelegate {
+  final CollectionReference productsCollection;
+
+  ProductSearchDelegate(this.productsCollection);
+
+  @override
+  List<Widget> buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.clear),
+        onPressed: () {
+          query = '';
+        },
+      ),
+    ];
+  }
+
+  @override
+  Widget buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () {
+        close(context, null);
+      },
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    return FutureBuilder<QuerySnapshot>(
+      future: productsCollection.get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final filteredProducts = snapshot.data!.docs.where((documentSnapshot) {
+          final name = documentSnapshot['name'].toString().toLowerCase();
+          return name.contains(query.toLowerCase());
+        }).toList();
+
+        if (filteredProducts.isEmpty) {
+          return const Center(
+            child: Text('No products found', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: filteredProducts.length,
+          itemBuilder: (context, index) {
+            final documentSnapshot = filteredProducts[index];
+            return ListTile(
+              title: Text(documentSnapshot['name']),
+              subtitle: Text(documentSnapshot['price'].toString()),
+              onTap: () {
+                // You can perform actions when an item is tapped, e.g., navigate to product details
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return Container();
   }
 }
